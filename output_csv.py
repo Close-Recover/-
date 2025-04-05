@@ -26,6 +26,52 @@ def standardize_time(time_str):
     
     return None  # 所有格式尝试失败
 
+def safe_to_csv(df, path):
+    success_count = 0
+    failed_count = 0
+    
+    for index, row in df.iterrows():
+        try:
+            # 尝试直接GBK编码保存
+            row_df = pd.DataFrame([row])
+            
+            # 第一次写入创建文件，后续追加写入
+            if success_count == 0:
+                row_df.to_csv(path, index=False, encoding='gbk', mode='w', header=True)
+            else:
+                row_df.to_csv(path, index=False, encoding='gbk', mode='a', header=False)
+            
+            success_count += 1
+            
+        except UnicodeEncodeError:
+            try:
+                # 如果GBK失败，尝试UTF-8转GBK
+                row_str = row_df.to_csv(index=False, header=False, encoding='utf-8')
+                row_str_gbk = row_str.encode('utf-8').decode('gbk', errors='ignore')
+                
+                # 追加写入转换后的内容
+                with open(path, 'a', encoding='gbk') as f:
+                    if success_count == 0:  # 如果是第一条且需要转换
+                        header_str = df.columns.to_series().to_csv(index=False, header=False, encoding='utf-8')
+                        header_str_gbk = header_str.encode('utf-8').decode('gbk', errors='ignore')
+                        f.write(header_str_gbk + '\n')
+                    f.write(row_str_gbk)
+                
+                success_count += 1
+                
+            except Exception as e:
+                failed_count += 1
+                print(f'第{index+1}条数据转换后仍保存失败: {e}')
+                print(f'失败数据: {row.to_dict()}')
+                
+        except Exception as e:
+            failed_count += 1
+            print(f'第{index+1}条数据保存失败: {e}')
+            print(f'失败数据: {row.to_dict()}')
+    
+    print(f'保存完成。成功保存 {success_count} 条数据，失败 {failed_count} 条，保存至: {path}')
+    return success_count, failed_count
+
 def outputCSV(infoList, path):
     """统一输出CSV文件"""
     # 转换数据格式
@@ -79,10 +125,4 @@ def outputCSV(infoList, path):
         print(formatted_data[:5]['发布时间'])
         return
     
-    try:
-        df.to_csv(path, index=False, encoding='gbk')
-        print(f'成功保存 {len(df)} 条数据至: {path}')
-        # print("\n数据样例:")
-        # print(df.head(3).to_string())
-    except Exception as e:
-        print(f'保存失败: {e}')
+    safe_to_csv(df, path)
